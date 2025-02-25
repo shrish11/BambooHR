@@ -5,7 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.freshworks.bambbohr.common.util.CommonUtil;
 import com.freshworks.bambbohr.common.util.JsonUtil;
+import com.freshworks.bambbohr.connector.dtos.BambooHREmployee;
 import com.freshworks.bambbohr.connector.dtos.BambooHrConnectorData;
+import com.freshworks.bambbohr.connector.dtos.FSConnectionDetails;
+import com.freshworks.bambbohr.connector.dtos.FreshServiceAgent;
 import com.freshworks.bambbohr.connector.request.EmployeeConnectorRequest;
 import lombok.extern.slf4j.Slf4j;
 
@@ -104,15 +107,90 @@ public class EmployeeConnectorUtil {
 
     private static Object syncBambooHRDataToFS(BambooHrConnectorData connectorData) throws JsonProcessingException {
 
-        String employeeDirectory = fetchEmployeeDirectory(connectorData);
-        ObjectMapper objectMapper = new ObjectMapper();
-        JsonNode jsonNode = objectMapper.readTree(employeeDirectory);
+         String employeeDirectory = fetchEmployeeDirectory(connectorData);
+        JsonNode jsonNode = JsonUtil.parseAsJsonNode(employeeDirectory);
         JsonNode employeesNode = jsonNode.get("employees");
-        convertBambooHREmployeeTOFSUser(employeesNode);
+        List<FreshServiceAgent> fsAgents = new ArrayList<>();
+        if(employeesNode.isArray()){
+            for(JsonNode employeeNode : employeesNode){
+                fsAgents.add(convertBambooHREmployeeTOFSUser(employeeNode));
+            }
+        }
+
+        return createFSAgents(fsAgents , connectorData);
+
 
     }
 
-    private static void convertBambooHREmployeeTOFSUser(JsonNode employeesNode) {
+    private static Object createFSAgents(List<FreshServiceAgent> fsAgents , BambooHrConnectorData connectorData) throws JsonProcessingException {
+
+        Map<String, Object> operationData = connectorData.getOperationData();
+        JsonNode jsonNode = JsonUtil.parseAsJsonNode(operationData.get("sync"));
+        FSConnectionDetails fsConnectionDetails = FSConnectionDetails.builder()
+                .accountDomain(jsonNode.get("fs_account").asText())
+                .user(jsonNode.get("fs_user").asText())
+                .password(jsonNode.get("fs_pwd").asText())
+                .build();
+        String auth = getAuth(fsConnectionDetails.getPassword(), fsConnectionDetails.getUser());
+
+        return createFsAgent(fsAgents, auth, fsConnectionDetails);
+    }
+
+    private static Object createFsAgent(List<FreshServiceAgent> fsAgents, String auth, FSConnectionDetails fsConnectionDetails) throws JsonProcessingException {
+
+        String createAgentUrl = "https://{domain}.freshservice.com/api/v2/agents";
+        String uriString = UriComponentsBuilder.fromUriString(createAgentUrl)
+                .buildAndExpand(fsConnectionDetails.getAccountDomain())
+                .toUriString();
+        RestClient restClient = RestClient.create();
+        List<String> fsAgentIds = new ArrayList<>();
+        for(FreshServiceAgent fsAgent: fsAgents){
+            if(fsAgent.getFirstName().contains("Shrish")){
+
+                JsonNode jsonNode = JsonUtil.parseAsJsonNode(fsAgent);
+                ResponseEntity<String> response = restClient.post()
+                        .uri(uriString)
+                        .header(HttpHeaders.AUTHORIZATION, "Basic "+auth)
+                        .header(HttpHeaders.CONTENT_TYPE, "application/json")
+                        .header(HttpHeaders.ACCEPT, "application/json")
+                        .body(jsonNode)
+                        .retrieve()
+                        .toEntity(String.class);
+
+                String body = response.getBody();
+                JsonNode agentBody = JsonUtil.parseAsJsonNode(body);
+                JsonNode jsonNodeAgent = agentBody.get("agent");
+                String id = jsonNodeAgent.get("id").asText();
+                fsAgentIds.add(id);
+            }
+
+        }
+
+        return fsAgentIds;
+
+    }
+
+    private static FreshServiceAgent convertBambooHREmployeeTOFSUser(JsonNode employeesNode) {
+
+        try {
+            BambooHREmployee bambooHREmployee = JsonUtil.parseAsObject(employeesNode, BambooHREmployee.class);
+            return FreshServiceAgent.builder()
+                    .firstName(bambooHREmployee.getFirstName())
+                    .lastName(bambooHREmployee.getLastName())
+                    .email(bambooHREmployee.getWorkEmail())
+                    .mobileNumber(bambooHREmployee.getMobilePhone())
+                    .workPhone(bambooHREmployee.getWorkPhone())
+                    .departmentIds(getFSDepartment(bambooHREmployee.getDepartment()))
+                    .build();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static List<Long> getFSDepartment(String department) {
+
+        String s = DepartmentMapping.bambooHRToFsDepartment(department);
+        return List.of(Long.parseLong(s));
     }
 
     private static String  fetchEmployeeDirectory(BambooHrConnectorData connectorData) {
@@ -121,7 +199,7 @@ public class EmployeeConnectorUtil {
 
 
         RestClient restClient = RestClient.create();
-        String encodedAuth = getAuth(connectorData);
+        String encodedAuth = getAuth(connectorData.getPassword(), connectorData.getUser());
 
         return restClient.get()
                 .uri(fetchEmployeeDirectoryUriStr)
@@ -141,11 +219,19 @@ public class EmployeeConnectorUtil {
         JsonNode employeeId = jsonNode.get("id");
         String fetchEmployeeUriStr = "https://api.bamboohr.com/api/gateway.php/testfreshworks/v1/employees/{id}";
 
+        if(jsonNode.get("department") != null){
+            String department = DepartmentMapping.fsToBambooHRDepartment(jsonNode.get("department").asText());
+            if(jsonNode instanceof ObjectNode){
+                ObjectNode jsonNode1 = (ObjectNode) jsonNode;
+                jsonNode1.put("department", department);
+            }
+        }
+
         String uriString = UriComponentsBuilder.fromUriString(fetchEmployeeUriStr)
                 .buildAndExpand(employeeId.asText())
                 .toUriString();
         RestClient restClient = RestClient.create();
-        String encodedAuth = getAuth(connectorData);
+        String encodedAuth = getAuth(connectorData.getPassword(), connectorData.getUser());
 
         ResponseEntity<String> response = restClient.post()
                 .uri(uriString)
@@ -173,7 +259,7 @@ public class EmployeeConnectorUtil {
                     .buildAndExpand(employeeId.asText())
                     .toUriString();
             RestClient restClient = RestClient.create();
-            String encodedAuth = getAuth(connectorData);
+            String encodedAuth = getAuth(connectorData.getPassword(), connectorData.getUser());
 
             return restClient.get()
                     .uri(uriString)
@@ -189,9 +275,9 @@ public class EmployeeConnectorUtil {
         }
     }
 
-    private static String getAuth(BambooHrConnectorData connectorData) {
+    private static String getAuth(String password, String user) {
 
-         String auth = connectorData.getPassword()+":"+connectorData.getUser();
+         String auth = password+":"+user;
 //        String auth = "dbe5b4ebd227cc1006ef9135b79ee8e7b8795ad7:testSR"; // Use real credentials
         return Base64.getEncoder().encodeToString(auth.getBytes());
     }
@@ -208,7 +294,7 @@ public class EmployeeConnectorUtil {
                         ObjectNode objectNode = (ObjectNode) jsonNode;
                         objectNode.put("employmentHistoryStatus","Contractor");
                   }
-                  String encodedAuth = getAuth(connectorData);
+                  String encodedAuth = getAuth(connectorData.getPassword(), connectorData.getUser());
 
                   ResponseEntity<String> response = restClient.post()
                           .uri("https://api.bamboohr.com/api/gateway.php/testfreshworks/v1/employees/")
