@@ -1,8 +1,6 @@
 package com.freshworks.bambbohr.worker;
 
 
-import com.freshworks.platform.utils.metric.MetricsClient;
-import com.freshworks.platform.utils.metric.MetricsClientImpl;
 import com.netflix.conductor.client.http.TaskClient;
 import com.netflix.conductor.common.metadata.tasks.Task;
 import com.netflix.conductor.common.metadata.tasks.TaskResult;
@@ -19,7 +17,7 @@ import com.freshworks.bambbohr.connector.request.EmployeeConnectorRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.freshworks.bambbohr.connector.service.ConnectorHagridConfiguration;
 import lombok.extern.slf4j.Slf4j;
-import com.freshworks.bambbohr.connector.util.EmployeeConnectorUtil;
+import com.freshworks.bambbohr.connector.util.BambooFSConnectorUtil;
 import com.freshworks.bambbohr.worker.util.WorkerUtil;
 
 
@@ -47,11 +45,11 @@ public class EmployeeWorker {
 
             EmployeeConnectorRequest employeeConnectorRequest = WorkerUtil.getConnectorRequest(task);
             ConnectorHagridConfiguration connectorHagridConfiguration = new ConnectorHagridConfiguration();
-            Map<String, String> inputData = EmployeeConnectorUtil.convertConnectorRequestDataToHagridMap(employeeConnectorRequest);
+            Map<String, String> inputData = BambooFSConnectorUtil.convertConnectorRequestDataToHagridMap(employeeConnectorRequest);
 
             ImmutableMap<String , String> baggageMap = employeeConnectorService.filterAndCreateBaggageMap(inputData);
 
-            Object employeeBambooHR = EmployeeConnectorUtil.callBambooHrAPI(baggageMap);
+            Object employeeBambooHR = BambooFSConnectorUtil.callBambooHrAPI(baggageMap);
 
         Map<String,Object> output = new HashMap();
         output.put("data", employeeBambooHR);
@@ -82,9 +80,30 @@ public class EmployeeWorker {
         return new TaskResult(task);
     }
 
+//    @WorkerTask(value = "fs_create_ticket")
+//    public TaskResult workSync(Task task) {
+//
+//        System.out.println("fs_create_ticket invoked");
+//
+//        EmployeeConnectorRequest employeeConnectorRequest = WorkerUtil.getConnectorRequest(task);
+//        ConnectorHagridConfiguration connectorHagridConfiguration = new ConnectorHagridConfiguration();
+//        Map<String, String> inputData = EmployeeConnectorUtil.convertConnectorRequestDataToHagridMap(employeeConnectorRequest);
+//        ImmutableMap<String , String> baggageMap = employeeConnectorService.filterAndCreateBaggageMap(inputData);
+//        Object fsTicket = FreshServiceUtil.createFSTicket(baggageMap);
+//
+//        Map<String,Object> output = new HashMap();
+//        output.put("data", fsTicket);
+//        task.setStatus(Task.Status.COMPLETED);
+//        task.setOutputData(output);
+//
+//        return new TaskResult(task);
+//    }
 
 
 
-}
+
+
+
+    }
 
 

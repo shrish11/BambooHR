@@ -5,10 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.freshworks.bambbohr.common.util.CommonUtil;
 import com.freshworks.bambbohr.common.util.JsonUtil;
-import com.freshworks.bambbohr.connector.dtos.BambooHREmployee;
-import com.freshworks.bambbohr.connector.dtos.BambooHrConnectorData;
-import com.freshworks.bambbohr.connector.dtos.FSConnectionDetails;
-import com.freshworks.bambbohr.connector.dtos.FreshServiceAgent;
+import com.freshworks.bambbohr.connector.dtos.*;
 import com.freshworks.bambbohr.connector.request.EmployeeConnectorRequest;
 import lombok.extern.slf4j.Slf4j;
 
@@ -19,17 +16,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.collect.ImmutableMap;
 import java.io.IOException;
 
-import com.freshworks.core.traverser.net.http.HttpRequest;
-import com.freshworks.core.traverser.net.http.HttpRequestResponse;
+import org.json.simple.JSONArray;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
+
 @Slf4j
-public class EmployeeConnectorUtil {
+public class BambooFSConnectorUtil {
 
      public static Map<String,String> convertConnectorRequestDataToHagridMap(EmployeeConnectorRequest connectorRequest) {
 
@@ -94,6 +90,8 @@ public class EmployeeConnectorUtil {
                     case "fetch": return fetchBambooHREmployee(connectorData);
                     case "update": return updateBambooHREmployee(connectorData);
                     case "sync": return syncBambooHRDataToFS(connectorData);
+                    case "create_fs_ticket": return createFSTicket(connectorData);
+                    case "create_fs_user": return createFSUser(connectorData);
 
 
                     default: throw new RuntimeException("Unsupported Operation");
@@ -104,6 +102,98 @@ public class EmployeeConnectorUtil {
 
 
         }
+
+    private static Object createFSUser(BambooHrConnectorData connectorData) throws JsonProcessingException {
+
+        Map<String, Object> operationData = connectorData.getOperationData();
+        JsonNode jsonNode = JsonUtil.parseAsJsonNode(operationData.get("create_fs_user"));
+        FreshServiceAgent freshServiceAgent = convertBambooHREmployeeTOFSUser(jsonNode);
+
+        FSConnectionDetails fsConnectionDetails = FSConnectionDetails.builder()
+                .accountDomain(jsonNode.get("fs_account").asText())
+                .user(jsonNode.get("fs_user").asText())
+                .password(jsonNode.get("fs_pwd").asText())
+                .build();
+        String auth = getAuth(fsConnectionDetails.getPassword(), fsConnectionDetails.getUser());
+
+        return createFsAgent(List.of(freshServiceAgent), auth, fsConnectionDetails);
+    }
+
+    private static Object createFSTicket(BambooHrConnectorData connectorData) throws IOException {
+
+        Map<String, Object> operationData = connectorData.getOperationData();
+        JsonNode jsonNode = JsonUtil.parseAsJsonNode(operationData.get("create_fs_ticket"));
+        FSConnectionDetails fsConnectionDetails = FSConnectionDetails.builder()
+                .accountDomain(jsonNode.get("fs_account").asText())
+                .user(jsonNode.get("fs_user").asText())
+                .password(jsonNode.get("fs_pwd").asText())
+                .build();
+        JsonNode ticketsNode = jsonNode.get("tickets");
+
+        List<String> ticketIds = new ArrayList<>();
+        if(ticketsNode.isArray()){
+            for(JsonNode ticketNode : ticketsNode){
+                ticketIds.add(createSingleFSTicket(ticketNode, fsConnectionDetails));
+            }
+        }
+
+        return ticketIds;
+
+    }
+
+    private static String createSingleFSTicket(JsonNode ticketNode, FSConnectionDetails fsConnectionDetails) throws IOException {
+
+            String createTicketUrl = "https://{domain}.freshservice.com/api/v2/tickets";
+            String uriString = UriComponentsBuilder.fromUriString(createTicketUrl)
+                    .buildAndExpand(fsConnectionDetails.getAccountDomain())
+                    .toUriString();
+        FreshserviceTicket freshserviceTicket = JsonUtil.parseAsObject(ticketNode, FreshserviceTicket.class);
+        Long groupId = getGroupId(ticketNode);
+        Long departmentId = departmentId(ticketNode);
+        freshserviceTicket.setDepartmentId(departmentId);
+        freshserviceTicket.setGroupId(groupId);
+        RestClient restClient = RestClient.create();
+            String auth = getAuth(fsConnectionDetails.getPassword(), fsConnectionDetails.getUser());
+
+            ResponseEntity<String> response = restClient.post()
+                    .uri(uriString)
+                    .header(HttpHeaders.AUTHORIZATION, "Basic "+auth)
+                    .header(HttpHeaders.CONTENT_TYPE, "application/json")
+                    .header(HttpHeaders.ACCEPT, "application/json")
+                    .body(freshserviceTicket)
+                    .retrieve()
+                    .toEntity(String.class);
+
+            HttpStatusCode statusCode = response.getStatusCode();
+        String body = response.getBody();
+        JsonNode agentBody = JsonUtil.parseAsJsonNode(body);
+        JsonNode jsonNodeAgent = agentBody.get("ticket");
+        return jsonNodeAgent.get("id").asText();
+
+//        return statusCode.is2xxSuccessful() ? "Ticket Created Successfully" : "Failed to create ticket";
+    }
+
+    private static Long getGroupId(JsonNode ticketNode) {
+        String type = ticketNode.get("type").asText();
+        if(type.equals("laptop"))
+            return 29000592980L;
+        else if(type.equals("CustomerId"))
+            return 29000592986L;
+
+        return 29000592980L;
+    }
+
+
+    private static Long departmentId(JsonNode ticketNode) {
+        String type = ticketNode.get("type").asText();
+        if(type.equals("laptop"))
+            return 29000324531L;
+        else if(type.equals("CustomerId"))
+            return 29000324530L;
+
+        return 29000592980L;
+    }
+
 
     private static Object syncBambooHRDataToFS(BambooHrConnectorData connectorData) throws JsonProcessingException {
 
