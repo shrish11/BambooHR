@@ -107,7 +107,8 @@ public class BambooFSConnectorUtil {
 
         Map<String, Object> operationData = connectorData.getOperationData();
         JsonNode jsonNode = JsonUtil.parseAsJsonNode(operationData.get("create_fs_user"));
-        FreshServiceAgent freshServiceAgent = convertBambooHREmployeeTOFSUser(jsonNode);
+        JsonNode employeeJsonNode = jsonNode.get("user");
+        FreshServiceAgent freshServiceAgent = convertBambooHREmployeeTOFSUser(employeeJsonNode);
 
         FSConnectionDetails fsConnectionDetails = FSConnectionDetails.builder()
                 .accountDomain(jsonNode.get("fs_account").asText())

@@ -30,5 +30,8 @@ public class FreshserviceTicket {
   @JsonProperty("workspace_id")
   private int workspaceId = 2;
 
+  @JsonProperty("requester_id")
+  private Long requestId;
+
 
 }

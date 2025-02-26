@@ -33,7 +33,7 @@ public class FreshServiceAgent {
     @JsonProperty("department_ids")
     List<Long> departmentIds;
 
-    Boolean occasional;
+    Boolean occasional = false;
 
     String id;
 }
