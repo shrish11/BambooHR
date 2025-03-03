@@ -1,5 +1,9 @@
 package com.freshworks.bambbohr.connector.util;
 
+import com.freshworks.bambbohr.connector.dtos.FSDepartment;
+
+import java.util.List;
+
 public class DepartmentMapping {
 
     public static String fsToBambooHRDepartment(String fsDeptId){
@@ -25,25 +29,25 @@ public class DepartmentMapping {
     }
 
 
-    public static String bambooHRToFsDepartment(String bambooHRDept){
+    public static Long bambooHRToFsDepartment(String bambooHRDept, List<FSDepartment> departments){
 
         switch (bambooHRDept) {
             case "Customer Success":
-                return "29000324527";
+                return departments.stream().filter(d -> "Customer Support".equalsIgnoreCase(d.getName())).findFirst().get().getId();
             case "UX":
-                return "29000324525";
+                return departments.stream().filter(d -> "Development".equalsIgnoreCase(d.getName())).findFirst().get().getId();
             case "Finance":
-                return "29000324528";
+                return departments.stream().filter(d -> "Finance".equalsIgnoreCase(d.getName())).findFirst().get().getId();
             case "Human Resources":
-                return "29000324529";
+                return departments.stream().filter(d -> "HR".equalsIgnoreCase(d.getName())).findFirst().get().getId();
             case "IT":
-                return "29000324531";
+                return departments.stream().filter(d -> "IT".equalsIgnoreCase(d.getName())).findFirst().get().getId();
             case "Operations":
-                return "29000324530";
+                return departments.stream().filter(d -> "Operations".equalsIgnoreCase(d.getName())).findFirst().get().getId();
             case "Sales":
-                return "29000324526";
+                return departments.stream().filter(d -> "Sales".equalsIgnoreCase(d.getName())).findFirst().get().getId();
             default:
-                return "29000324527";
+                return 29000324526L;
         }
     }
 }

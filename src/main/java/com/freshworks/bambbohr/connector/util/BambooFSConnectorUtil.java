@@ -103,18 +103,22 @@ public class BambooFSConnectorUtil {
 
         }
 
-    private static Object createFSUser(BambooHrConnectorData connectorData) throws JsonProcessingException {
+    private static Object createFSUser(BambooHrConnectorData connectorData) throws IOException {
 
         Map<String, Object> operationData = connectorData.getOperationData();
         JsonNode jsonNode = JsonUtil.parseAsJsonNode(operationData.get("create_fs_user"));
         JsonNode employeeJsonNode = jsonNode.get("user");
-        FreshServiceAgent freshServiceAgent = convertBambooHREmployeeTOFSUser(employeeJsonNode);
 
         FSConnectionDetails fsConnectionDetails = FSConnectionDetails.builder()
                 .accountDomain(jsonNode.get("fs_account").asText())
                 .user(jsonNode.get("fs_user").asText())
                 .password(jsonNode.get("fs_pwd").asText())
                 .build();
+
+        List<FSDepartment> fsDepartments = fetchFSDepartmentList(fsConnectionDetails);
+        FreshServiceAgent freshServiceAgent = convertBambooHREmployeeTOFSUser(employeeJsonNode, fsDepartments);
+        System.out.println("FsAgent Object created: "+freshServiceAgent);
+
         String auth = getAuth(fsConnectionDetails.getPassword(), fsConnectionDetails.getUser());
 
         return createFsAgent(List.of(freshServiceAgent), auth, fsConnectionDetails);
@@ -169,7 +173,9 @@ public class BambooFSConnectorUtil {
         String body = response.getBody();
         JsonNode agentBody = JsonUtil.parseAsJsonNode(body);
         JsonNode jsonNodeAgent = agentBody.get("ticket");
-        return jsonNodeAgent.get("id").asText();
+        String ticketId = jsonNodeAgent.get("id").asText();
+        System.out.println("Ticket created: "+ticketId);
+        return ticketId;
 
 //        return statusCode.is2xxSuccessful() ? "Ticket Created Successfully" : "Failed to create ticket";
     }
@@ -204,7 +210,7 @@ public class BambooFSConnectorUtil {
         List<FreshServiceAgent> fsAgents = new ArrayList<>();
         if(employeesNode.isArray()){
             for(JsonNode employeeNode : employeesNode){
-                fsAgents.add(convertBambooHREmployeeTOFSUser(employeeNode));
+//                fsAgents.add(convertBambooHREmployeeTOFSUser(employeeNode));
             }
         }
 
@@ -236,7 +242,7 @@ public class BambooFSConnectorUtil {
         RestClient restClient = RestClient.create();
         List<String> fsAgentIds = new ArrayList<>();
         for(FreshServiceAgent fsAgent: fsAgents){
-            if(fsAgent.getFirstName().contains("Shrish")){
+//            if(fsAgent.getFirstName().contains("Shrish")){
 
                 JsonNode jsonNode = JsonUtil.parseAsJsonNode(fsAgent);
                 ResponseEntity<String> response = restClient.post()
@@ -252,8 +258,9 @@ public class BambooFSConnectorUtil {
                 JsonNode agentBody = JsonUtil.parseAsJsonNode(body);
                 JsonNode jsonNodeAgent = agentBody.get("agent");
                 String id = jsonNodeAgent.get("id").asText();
+                System.out.println("Agent Id: "+id);
                 fsAgentIds.add(id);
-            }
+//            }
 
         }
 
@@ -261,7 +268,7 @@ public class BambooFSConnectorUtil {
 
     }
 
-    private static FreshServiceAgent convertBambooHREmployeeTOFSUser(JsonNode employeesNode) {
+    private static FreshServiceAgent convertBambooHREmployeeTOFSUser(JsonNode employeesNode, List<FSDepartment> departments) {
 
         try {
             BambooHREmployee bambooHREmployee = JsonUtil.parseAsObject(employeesNode, BambooHREmployee.class);
@@ -271,17 +278,49 @@ public class BambooFSConnectorUtil {
                     .email(bambooHREmployee.getWorkEmail())
                     .mobileNumber(bambooHREmployee.getMobilePhone())
                     .workPhone(bambooHREmployee.getWorkPhone())
-                    .departmentIds(getFSDepartment(bambooHREmployee.getDepartment()))
+                    .departmentIds(getFSDepartment(bambooHREmployee.getDepartment(), departments))
                     .build();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private static List<Long> getFSDepartment(String department) {
+    private static List<FSDepartment> fetchFSDepartmentList(FSConnectionDetails fsConnectionDetails) throws IOException {
 
-        String s = DepartmentMapping.bambooHRToFsDepartment(department);
-        return List.of(Long.parseLong(s));
+        String createTicketUrl = "https://{domain}.freshservice.com/api/v2/departments";
+        String uriString = UriComponentsBuilder.fromUriString(createTicketUrl)
+                .buildAndExpand(fsConnectionDetails.getAccountDomain())
+                .toUriString();
+        String auth = getAuth(fsConnectionDetails.getPassword(), fsConnectionDetails.getUser());
+
+        RestClient restClient = RestClient.create();
+
+        ResponseEntity<String> entity = restClient.get()
+                .uri(uriString)
+                .header(HttpHeaders.AUTHORIZATION, "Basic " + auth)
+                .header(HttpHeaders.CONTENT_TYPE, "application/json")
+                .header(HttpHeaders.ACCEPT, "application/json")
+                .retrieve()
+                .toEntity(String.class);
+
+        String body = entity.getBody();
+        JsonNode jsonNode = JsonUtil.parseAsJsonNode(body);
+        JsonNode departmentNode = jsonNode.get("departments");
+        List<FSDepartment> departments = new ArrayList<>();
+//        if(departmentNode.isArray()){
+        for(JsonNode node : departmentNode){
+            FSDepartment fsDepartment = JsonUtil.parseAsObject(node, FSDepartment.class);
+            departments.add(fsDepartment);
+        }
+//        }
+        return departments;
+    }
+
+
+    private static List<Long> getFSDepartment(String department, List<FSDepartment> departments) {
+
+         return List.of(DepartmentMapping.bambooHRToFsDepartment(department, departments));
+
     }
 
     private static String  fetchEmployeeDirectory(BambooHrConnectorData connectorData) {
@@ -420,7 +459,7 @@ public class BambooFSConnectorUtil {
 
     static BambooHrConnectorData getConnectorData(Map<String, Object> workflowInput){
 
-             String jsonInput = JsonUtil.toJsonString(workflowInput.get("bamboohr_connector_new"));
+             String jsonInput = JsonUtil.toJsonString(workflowInput.get("create_fs_user_connector"));
              try {
                  ObjectMapper objectMapper = new ObjectMapper();
                  BambooHrConnectorData request = objectMapper.readValue(jsonInput, BambooHrConnectorData.class);

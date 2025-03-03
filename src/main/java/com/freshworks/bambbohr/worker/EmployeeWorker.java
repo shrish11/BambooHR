@@ -38,10 +38,10 @@ public class EmployeeWorker {
     }
 
 
-    @WorkerTask(value = "bamboohr_connector_new")
+    @WorkerTask(value = "create_fs_user_connector")
     public TaskResult work(Task task) {
 
-            log.info("worker task: bamboohr_connector_new invoked");
+            log.info("worker task: create_fs_user_connector invoked");
 
             EmployeeConnectorRequest employeeConnectorRequest = WorkerUtil.getConnectorRequest(task);
             ConnectorHagridConfiguration connectorHagridConfiguration = new ConnectorHagridConfiguration();

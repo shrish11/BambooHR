@@ -1,6 +1,7 @@
 package com.freshworks.bambbohr.worker.util;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.freshworks.bambbohr.common.util.JsonUtil;
 import com.freshworks.bambbohr.connector.request.EmployeeConnectorRequest;
@@ -22,10 +23,18 @@ public class WorkerUtil {
 
                Map<String, Object> workflowInput = new HashMap<>();
                Map<String, Object> inputData = task.getInputData();
+               Long accountId = null;
                try {
                       if(inputData != null && inputData.get("workflow") != null) {
-                           workflowInput = (Map<String,Object>)inputData.get("workflow");
-                     }
+                          workflowInput = (Map<String,Object>)inputData.get("workflow");
+//                          Object workflow = workflowInput.get("workflow");
+//                          Map<String,Object> workFlowData = (Map<String,Object>)JsonUtil.parseAsObject(workflow, new TypeReference<>() {
+//                          });
+//                          Object metadatObj = workFlowData.get("metadata");
+//                          Map<String,Object> metadata = (Map<String,Object>)JsonUtil.parseAsObject(metadatObj, new TypeReference<>() {
+//                          });
+//                          accountId = Long.parseLong(String.valueOf(metadata.get("accountId")));
+                      }
 
                     } catch (Exception e) {
 
@@ -51,7 +60,7 @@ public class WorkerUtil {
                              .accountId(Optional.ofNullable(task.getInputData().get("accountId"))
                                      .map(Object::toString)
                                      .map(Long::parseLong)
-                                     .orElse(null))
+                                     .orElse(accountId))
                              .data(JsonUtil.parseAsJsonNode(task.getInputData().get("data")))
                              .task(task)
                              .build();
